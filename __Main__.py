@@ -268,7 +268,7 @@ async def check_membership(client, callback_query):
 
 @app.route('/')
 def index():
-    return "Bot is running"
+    return "Bot is running!"
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
