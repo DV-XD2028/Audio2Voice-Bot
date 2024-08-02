@@ -1,13 +1,14 @@
-import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, Message
 from pyrogram.errors import UserNotParticipant
 import os
+import asyncio
 import subprocess
 from datetime import datetime, timezone
+from languages import en, fa, es, ru, zh, ar, de, it, tr, fr, ja, ko, hi, pt, hu, ro, nl, sv
+import json
 from flask import Flask
 import threading
-import json
 
 app = Flask(__name__)
 
@@ -23,6 +24,7 @@ FFMPEG_PATH = None
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 CHANNEL_USERNAME = "@amirabbas_jadidi"
+
 
 user_languages = {}
 if os.path.exists("user_languages.json"):
@@ -179,102 +181,43 @@ async def change_language(client, message):
         reply_markup=language_buttons
     )
 
-@bot.on_message(filters.document | filters.audio | filters.voice)
+def convert_audio(input_file, output_file):
+    command = [FFMPEG_PATH or "ffmpeg", "-i", input_file, "-vn", "-acodec", "libopus", "-b:a", "128k", "-vbr", "on", "-compression_level", "10", "-frame_duration", "60", "-application", "voip", "-y", output_file]
+    subprocess.run(command, check=True)
+
+@bot.on_message(filters.audio | filters.voice)
 async def handle_audio(client, message):
     user_id = message.from_user.id
-    file_info = None
-    if message.document:
-        file_info = message.document
-    if message.audio:
-        file_info = message.audio
-    elif message.voice:
-        file_info = message.voice
-
-    if not await is_user_member(client, user_id):
-        join_buttons = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(get_message(user_id, "join_channel"), url=f"https://t.me/{CHANNEL_USERNAME[1]}")],
-                [InlineKeyboardButton(get_message(user_id, "check_membership"), callback_data="check_membership")]
-            ]
-        )
-        await message.reply_text(get_message(user_id, "must_join"), reply_markup=join_buttons)
+    file_info = message.audio or message.voice
+    if file_info.file_size > MAX_FILE_SIZE:
+        await message.reply_text(get_message(user_id, "file_too_large"))
         return
 
-    if file_info:
-        valid_mime_types = [
-            "audio/ogg",
-            "audio/vorbis",
-            "audio/x-vorbis+ogg",
-            "audio/mpeg",
-            "audio/wav",
-            "audio/x-wav",
-            "audio/vnd.wave"
-        ]
-        if file_info.mime_type in valid_mime_types:
-            if file_info.file_size <= MAX_FILE_SIZE:
-                start_time = datetime.now()
+    if not await is_user_member(client, user_id):
+        join_button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(get_message(user_id, "join_channel_button"), url=f"https://t.me/{CHANNEL_USERNAME}")]]
+        )
+        await message.reply_text(get_message(user_id, "join_channel"), reply_markup=join_button)
+        return
 
-                input_file, progress_message = await download_with_progress(message, file_info)
+    input_file, progress_message = await download_with_progress(message, file_info)
 
-                if input_file:
-                    status_message = get_message(user_id, "converting")
-                    for i in range(0, 101, 10):
-                        await asyncio.sleep(0.5)
-                        await update_progress(progress_message, i, status_message)
+    if input_file:
+        output_file = f"{os.path.splitext(input_file)[0]}_converted.ogg"
+        convert_audio(input_file, output_file)
+        await progress_message.edit_text(get_message(user_id, "uploading"))
+        await upload_with_progress(client, message, output_file)
+        os.remove(input_file)
+        os.remove(output_file)
 
-                    output_file = input_file.rsplit(".", 1)[0] + "_converted.ogg"
-                    try:
-                        subprocess.run(
-                            [FFMPEG_PATH if FFMPEG_PATH else 'ffmpeg', "-i", input_file, "-c:a", "libopus", output_file],
-                            check=True
-                        )
+def run_flask_app():
+    @app.route('/')
+    def index():
+        return "Server is running!"
 
-                        await upload_with_progress(client, message, output_file)
-
-                        end_time = datetime.now()
-                        total_time = end_time - start_time
-                        total_seconds = int(total_time.total_seconds())
-                        formatted_time = str(datetime.fromtimestamp(total_seconds, timezone.utc).strftime('%H:%M:%S'))
-                        await progress_message.edit_text(
-                            f"{get_message(user_id, 'success')}\n"
-                            f"{get_message(user_id, 'start_time')}: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                            f"{get_message(user_id, 'end_time')}: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                            f"{get_message(user_id, 'total_time')}: {formatted_time}\n"
-                            f"{get_message(user_id, 'voice_sent')}"
-                        )
-                        os.remove(input_file)
-                        os.remove(output_file)
-                    except Exception as e:
-                        await message.reply_text(get_message(user_id, 'error_conversion'))
-                else:
-                    await progress_message.delete()
-                    await message.reply_text(get_message(user_id, 'error_download'))
-            else:
-                await message.reply_text(get_message(user_id, 'file_too_large'))
-        else:
-            await message.reply_text(get_message(user_id, 'invalid_file'))
-    else:
-        await message.reply_text(get_message(user_id, 'invalid_file'))
-
-@bot.on_callback_query(filters.regex("^check_membership$"))
-async def check_membership(client, callback_query):
-    user_id = callback_query.from_user.id
-    if await is_user_member(client, user_id):
-        await callback_query.message.delete()
-        await callback_query.message.reply_text(get_message(user_id, "join_message"))
-        await callback_query.answer()
-    else:
-        await callback_query.answer(get_message(user_id, "not_member"), show_alert=True)
-
-@app.route('/')
-def index():
-    return "Bot is running!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host="0.0.0.0", port=5000)
 
 if __name__ == "__main__":
-    flask_thread = threading.Thread(target=run_flask)
+    flask_thread = threading.Thread(target=run_flask_app)
     flask_thread.start()
-
-    asyncio.run(bot.run())
+    bot.run()
