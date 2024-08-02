@@ -1,13 +1,13 @@
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, Message
 from pyrogram.errors import UserNotParticipant
 import os
-import asyncio
 import subprocess
 from datetime import datetime, timezone
-from languages import en, fa, es, ru, zh, ar, de, it, tr, fr, ja, ko, hi, pt, hu, ro, nl, sv
-import json
 from flask import Flask
+import threading
+import json
 
 app = Flask(__name__)
 
@@ -23,7 +23,6 @@ FFMPEG_PATH = None
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 CHANNEL_USERNAME = "@amirabbas_jadidi"
-
 
 user_languages = {}
 if os.path.exists("user_languages.json"):
@@ -271,6 +270,11 @@ async def check_membership(client, callback_query):
 def index():
     return "Bot is running"
 
-if __name__ == "__main__":
-    bot.start()
+def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
+if __name__ == "__main__":
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    asyncio.run(bot.run())
