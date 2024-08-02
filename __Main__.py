@@ -7,11 +7,14 @@ import subprocess
 from datetime import datetime, timezone
 from languages import en, fa, es, ru, zh, ar, de, it, tr, fr, ja, ko, hi, pt, hu, ro, nl, sv
 import json
+from flask import Flask
+
+app = Flask(__name__)
 
 api_id = os.getenv('APP_ID')
 api_hash = os.getenv('API_HASH')
 bot_token = os.getenv('BOT_TOKEN')
-app = Client("voice_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+bot = Client("voice_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 # Example: FFMPEG_PATH = "C:\\path\\to\\your\\ffmpeg\\bin\\ffmpeg.exe"
 FFMPEG_PATH = None
@@ -90,7 +93,7 @@ async def download_with_progress(message, file_info):
         percent = int(current * 100 / total)
         asyncio.run_coroutine_threadsafe(
             update_progress(progress_message, percent, get_message(user_id, "downloading")),
-            app.loop
+            bot.loop
         )
 
     input_file = await message.download(file_name=file_name, progress=progress)
@@ -110,7 +113,7 @@ async def upload_with_progress(client, message, output_file):
         percent = int(current * 100 / total)
         asyncio.run_coroutine_threadsafe(
             update_progress(progress_message, percent, get_message(user_id, "uploading")),
-            app.loop
+            bot.loop
         )
 
     with open(output_file, "rb") as f:
@@ -118,7 +121,7 @@ async def upload_with_progress(client, message, output_file):
 
     await progress_message.delete()
 
-@app.on_message(filters.command("start"))
+@bot.on_message(filters.command("start"))
 async def start(client, message):
     user_id = message.from_user.id
     if str(user_id) not in user_languages:
@@ -146,7 +149,7 @@ async def start(client, message):
         BotCommand("lang", "Change language")
     ])
 
-@app.on_callback_query(filters.regex("^(fa|en|es|ru|zh|ar|de|it|tr|fr|ja|ko|hi|pt|hu|ro|nl|sv)$"))
+@bot.on_callback_query(filters.regex("^(fa|en|es|ru|zh|ar|de|it|tr|fr|ja|ko|hi|pt|hu|ro|nl|sv)$"))
 async def set_language(client, callback_query):
     user_id = callback_query.from_user.id
     chosen_language = callback_query.data
@@ -156,7 +159,7 @@ async def set_language(client, callback_query):
     await callback_query.message.reply_text(get_message(user_id, "start"))
     await callback_query.answer()
 
-@app.on_message(filters.command("lang"))
+@bot.on_message(filters.command("lang"))
 async def change_language(client, message):
     user_id = message.from_user.id
     language_buttons = InlineKeyboardMarkup(
@@ -177,7 +180,7 @@ async def change_language(client, message):
         reply_markup=language_buttons
     )
 
-@app.on_message(filters.document | filters.audio | filters.voice)
+@bot.on_message(filters.document | filters.audio | filters.voice)
 async def handle_audio(client, message):
     user_id = message.from_user.id
     file_info = None
@@ -254,7 +257,7 @@ async def handle_audio(client, message):
     else:
         await message.reply_text(get_message(user_id, 'invalid_file'))
 
-@app.on_callback_query(filters.regex("^check_membership$"))
+@bot.on_callback_query(filters.regex("^check_membership$"))
 async def check_membership(client, callback_query):
     user_id = callback_query.from_user.id
     if await is_user_member(client, user_id):
@@ -264,4 +267,10 @@ async def check_membership(client, callback_query):
     else:
         await callback_query.answer(get_message(user_id, "not_member"), show_alert=True)
 
-app.run()
+@app.route('/')
+def index():
+    return "Bot is running"
+
+if __name__ == "__main__":
+    bot.start()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
