@@ -1,0 +1,7 @@
+services:
+  - name: voice-bot
+    type: web
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python __Main__.py"
+    plan: free
